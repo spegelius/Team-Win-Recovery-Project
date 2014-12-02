@@ -373,7 +373,8 @@ LOCAL_ADDITIONAL_DEPENDENCIES := \
     toolbox_symlinks \
     twrp \
     unpigz_symlink \
-    updater
+    updater \
+    zip
 
 ifeq ($(BOARD_HAS_NO_REAL_SDCARD),)
     LOCAL_ADDITIONAL_DEPENDENCIES += parted
