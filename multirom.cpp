@@ -20,10 +20,17 @@
 #include "partitions.hpp"
 #include "twrp-functions.hpp"
 #include "twinstall.h"
+#if (ANDROID_VERSION >= 5)
+#include "minzip/SysUtil.h"
 #include "minzip/Zip.h"
+#include "verifier.h"
+#else
+#include "minzipold/SysUtil.h"
+#include "minzipold/Zip.h"
+#include "verifierold.h"
+#endif
 #include "variables.h"
 #include "openrecoveryscript.hpp"
-#include "verifier.h"
 
 extern "C" {
 #include "twcommon.h"
@@ -963,7 +970,17 @@ bool MultiROM::verifyZIP(const std::string& file, int &verify_status)
 		return true;
 
 	gui_print("Verifying zip signature...\n");
+#if (ANDROID_VERSION >= 5)
+	MemMapping map;
+	if (sysMapFile(file.c_str(), &map) != 0) {
+		LOGERR("Failed to sysMapFile '%s'\n", file.c_str());
+		return false;
+	}
+	int ret_val = verify_file(map.addr, map.length);
+	sysReleaseMap(&map);
+#else
 	int ret_val = verify_file(file.c_str());
+#endif
 	if (ret_val != VERIFY_SUCCESS) {
 		LOGERR("Zip signature verification failed: %i\n", ret_val);
 		return false;
@@ -1008,6 +1025,7 @@ static char *strstr_wildcard(const char *s, const char *find)
 	return NULL;
 }
 
+// This needs to fucking go.
 bool MultiROM::skipLine(const char *line)
 {
 
@@ -1015,7 +1033,7 @@ bool MultiROM::skipLine(const char *line)
 		if (strstr(line, "mount") < strstr(line, "ui_print"))
 			return true;
 
-	if(strstr(line, "mount") && !strstr(line, "ui_print"))
+	if((strstr(line, "mount(") || strstr(line, "mount\"")) && !strstr(line, "ui_print"))
 	{
 		if (strstr(line, "run_program") ||
 			(!strstr_wildcard(line, "/system/?bin/?mount") && !strstr(line, "symlink(")))
@@ -1040,6 +1058,40 @@ bool MultiROM::skipLine(const char *line)
 		return true;
 
 	return false;
+}
+
+void MultiROM::appendBraces(FILE *out, const char *line)
+{
+	int counter = 0;
+	int tildas = 0;
+	for(; *line; ++line)
+	{
+		if(*line == '(')
+			++counter;
+		else if(*line == ')')
+		{
+			--counter;
+			tildas = 0;
+		}
+		else if(*line == ';')
+			++tildas;
+	}
+
+	char c = '(';
+	if(counter < 0)
+	{
+		c = ')';
+		counter *= -1;
+	}
+	else
+		tildas = 0;
+
+	for(int i = 0; i < counter; ++i)
+		fputc(c, out);
+
+	if(tildas)
+		fputc(';', out);
+	fputc('\n', out);
 }
 
 bool MultiROM::prepareZIP(std::string& file, bool &has_block_update)
@@ -1072,8 +1124,21 @@ bool MultiROM::prepareZIP(std::string& file, bool &has_block_update)
 	if(!new_script)
 		return false;
 
+#if (ANDROID_VERSION >= 5)
+	MemMapping map;
+	if (sysMapFile(file.c_str(), &map) != 0) {
+		LOGERR("Failed to sysMapFile '%s'\n", file.c_str());
+		fclose(new_script);
+		return false;
+	}
+#endif
+
 	ZipArchive zip;
+#if (ANDROID_VERSION >= 5)
+	if (mzOpenZipArchive(map.addr, map.length, &zip) != 0)
+#else
 	if (mzOpenZipArchive(file.c_str(), &zip) != 0)
+#endif
 	{
 		gui_print("Failed to open ZIP archive %s!\n", file.c_str());
 		goto exit;
@@ -1093,6 +1158,9 @@ bool MultiROM::prepareZIP(std::string& file, bool &has_block_update)
 	}
 
 	mzCloseZipArchive(&zip);
+#if (ANDROID_VERSION >= 5)
+	sysReleaseMap(&map);
+#endif
 
 	token = strtok_r(script_data, "\n", &saveptr);
 	while(token)
@@ -1107,6 +1175,8 @@ bool MultiROM::prepareZIP(std::string& file, bool &has_block_update)
 		else
 		{
 			changed = true;
+
+			appendBraces(new_script, p);
 
 			if (strstr(p, "format(") == p && strstr(p, "/system"))
 			{
@@ -1181,6 +1251,9 @@ bool MultiROM::prepareZIP(std::string& file, bool &has_block_update)
 exit:
 	free(script_data);
 	mzCloseZipArchive(&zip);
+#if (ANDROID_VERSION >= 5)
+	sysReleaseMap(&map);
+#endif
 	fclose(new_script);
 	return false;
 }
