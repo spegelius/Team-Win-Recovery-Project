@@ -39,11 +39,6 @@ extern "C"
 {
 #include "../twcommon.h"
 #include "../minuitwrp/minui.h"
-#ifdef HAVE_SELINUX
-#include "../minzip/Zip.h"
-#else
-#include "../minzipold/Zip.h"
-#endif
 #include <pixelflinger/pixelflinger.h>
 }
 
@@ -120,7 +115,7 @@ static void curtainSet()
 {
 	gr_color(0, 0, 0, 255);
 	gr_fill(0, 0, gr_fb_width(), gr_fb_height());
-	gr_blit(gCurtain, 0, 0, gr_get_width(gCurtain), gr_get_height(gCurtain), 0, 0);
+	gr_blit(gCurtain, 0, 0, gr_get_width(gCurtain), gr_get_height(gCurtain), TW_X_OFFSET, TW_Y_OFFSET);
 	gr_flip();
 }
 

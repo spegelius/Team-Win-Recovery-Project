@@ -3,11 +3,7 @@
 #ifndef _PAGES_HEADER_HPP
 #define _PAGES_HEADER_HPP
 
-#ifdef HAVE_SELINUX
 #include "../minzip/Zip.h"
-#else
-#include "../minzipold/Zip.h"
-#endif
 
 typedef struct {
 	unsigned char red;
@@ -105,6 +101,7 @@ protected:
 	std::vector<xml_node<>*> templates;
 	Page* mCurrentPage;
 	Page* mOverlayPage; // This is a special case, used for "locking" the screen
+	std::vector<xml_document<>*> mIncludedDocs;
 };
 
 class PageManager

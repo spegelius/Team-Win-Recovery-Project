@@ -20,15 +20,9 @@
 #include "partitions.hpp"
 #include "twrp-functions.hpp"
 #include "twinstall.h"
-#if (ANDROID_VERSION >= 5)
 #include "minzip/SysUtil.h"
 #include "minzip/Zip.h"
 #include "verifier.h"
-#else
-#include "minzipold/SysUtil.h"
-#include "minzipold/Zip.h"
-#include "verifierold.h"
-#endif
 #include "variables.h"
 #include "openrecoveryscript.hpp"
 
@@ -38,7 +32,7 @@ extern "C" {
 #include "multirom_hooks.h"
 }
 
-#include "libblkid/blkid.h"
+#include "libblkid/include/blkid.h"
 
 std::string MultiROM::m_path = "";
 std::string MultiROM::m_boot_dev = "";
@@ -970,7 +964,6 @@ bool MultiROM::verifyZIP(const std::string& file, int &verify_status)
 		return true;
 
 	gui_print("Verifying zip signature...\n");
-#if (ANDROID_VERSION >= 5)
 	MemMapping map;
 	if (sysMapFile(file.c_str(), &map) != 0) {
 		LOGERR("Failed to sysMapFile '%s'\n", file.c_str());
@@ -978,9 +971,6 @@ bool MultiROM::verifyZIP(const std::string& file, int &verify_status)
 	}
 	int ret_val = verify_file(map.addr, map.length);
 	sysReleaseMap(&map);
-#else
-	int ret_val = verify_file(file.c_str());
-#endif
 	if (ret_val != VERIFY_SUCCESS) {
 		LOGERR("Zip signature verification failed: %i\n", ret_val);
 		return false;
@@ -1091,7 +1081,9 @@ void MultiROM::appendBraces(FILE *out, const char *line)
 
 	if(tildas)
 		fputc(';', out);
-	fputc('\n', out);
+
+	if(counter || tildas)
+		fputc('\n', out);
 }
 
 bool MultiROM::prepareZIP(std::string& file, bool &has_block_update)
@@ -1124,21 +1116,15 @@ bool MultiROM::prepareZIP(std::string& file, bool &has_block_update)
 	if(!new_script)
 		return false;
 
-#if (ANDROID_VERSION >= 5)
 	MemMapping map;
 	if (sysMapFile(file.c_str(), &map) != 0) {
 		LOGERR("Failed to sysMapFile '%s'\n", file.c_str());
 		fclose(new_script);
 		return false;
 	}
-#endif
 
 	ZipArchive zip;
-#if (ANDROID_VERSION >= 5)
 	if (mzOpenZipArchive(map.addr, map.length, &zip) != 0)
-#else
-	if (mzOpenZipArchive(file.c_str(), &zip) != 0)
-#endif
 	{
 		gui_print("Failed to open ZIP archive %s!\n", file.c_str());
 		goto exit;
@@ -1158,9 +1144,7 @@ bool MultiROM::prepareZIP(std::string& file, bool &has_block_update)
 	}
 
 	mzCloseZipArchive(&zip);
-#if (ANDROID_VERSION >= 5)
 	sysReleaseMap(&map);
-#endif
 
 	token = strtok_r(script_data, "\n", &saveptr);
 	while(token)
@@ -1184,8 +1168,7 @@ bool MultiROM::prepareZIP(std::string& file, bool &has_block_update)
 				fputs("run_program(\"/sbin/sh\", \"-c\", \"chattr -R -i /system/*\");\n", new_script);
 				fputs("run_program(\"/sbin/sh\", \"-c\", \"rm -rf /system/*\");\n", new_script);
 			}
-
-			if(strstr(p, "block_image_update(") == p)
+			else if(strstr(p, "block_image_update(") == p)
 			{
 				has_block_update = true;
 
@@ -1198,6 +1181,11 @@ bool MultiROM::prepareZIP(std::string& file, bool &has_block_update)
 					fprintf(new_script, "run_program(\"/sbin/sh\", \"-c\", \"mkdir -p /tmpsystem && mount -t ext4 $(readlink -f -n %s) /tmpsystem && cp -a /tmpsystem/* /system/\");\n",
 							sys->Actual_Block_Device.c_str());
 				}
+			}
+			else
+			{
+				// Add dummy line, because ifs need to have something in them
+				fprintf(new_script, "ui_print(\"\"); # orig: \"%s\" - removed by multirom\n", p);
 			}
 		}
 		token = strtok_r(NULL, "\n", &saveptr);
@@ -1251,9 +1239,7 @@ bool MultiROM::prepareZIP(std::string& file, bool &has_block_update)
 exit:
 	free(script_data);
 	mzCloseZipArchive(&zip);
-#if (ANDROID_VERSION >= 5)
 	sysReleaseMap(&map);
-#endif
 	fclose(new_script);
 	return false;
 }
@@ -2810,7 +2796,7 @@ void MultiROM::executeCacheScripts()
 void MultiROM::startSystemImageUpgrader()
 {
 	DataManager::SetValue("tw_back", "main");
-	DataManager::SetValue("tw_action", "system-image-upgrader");
+	DataManager::SetValue("tw_action", "system_image_upgrader");
 	DataManager::SetValue("tw_has_action2", "0");
 	DataManager::SetValue("tw_action2", "");
 	DataManager::SetValue("tw_action2_param", "");
