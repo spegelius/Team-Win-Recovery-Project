@@ -132,6 +132,7 @@ int main(int argc, char **argv) {
 	PartitionManager.Output_Partition_Logging();
 
 	DataManager::SetValue(TW_MROM_REC_VERSION_VAR, MultiROM::getRecoveryVersion());
+	printf("MultiROM Recovery version: %s\n", DataManager::GetStrValue(TW_MROM_REC_VERSION_VAR).c_str());
 
 	// Load up all the resources
 	gui_loadResources();
@@ -293,6 +294,9 @@ int main(int argc, char **argv) {
 		LOGINFO("Is encrypted, do decrypt page first\n");
 		if (gui_startPage("decrypt") != 0) {
 			LOGERR("Failed to start decrypt GUI page.\n");
+		} else {
+			// Check for and load custom theme if present
+			gui_loadCustomResources();
 		}
 	} else if (datamedia) {
 		if (tw_get_default_metadata(DataManager::GetSettingsStoragePath().c_str()) != 0) {
