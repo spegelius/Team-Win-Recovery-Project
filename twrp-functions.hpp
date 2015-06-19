@@ -76,6 +76,7 @@ public:
 	static int read_file(string fn, vector<string>& results); //read from file
 	static int read_file(string fn, string& results); //read from file
 	static int write_file(string fn, const string& line); //write from file
+	static int write_file(string fn, const string& line, const char *mode); //write from file
 	static int read_file(string fn, uint64_t& results); //read from file
 	static bool Install_SuperSU(void); // Installs su binary and apk and sets proper permissions
 	static bool Try_Decrypting_Backup(string Restore_Path, string Password); // true for success, false for failed to decrypt
@@ -98,6 +99,7 @@ public:
 	static std::string getROMName();
 	static void stringReplace(std::string& str, char before, char after);
 	static void trim(std::string& str);
+	static int64_t getFreeSpace(const std::string& path);
 #ifdef HAVE_SELINUX
 	static bool restorecon(const std::string& path, struct selabel_handle *sh);
 #endif

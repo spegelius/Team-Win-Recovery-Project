@@ -36,6 +36,8 @@
 #include <fstream>
 #include <sstream>
 #include <ctype.h>
+#include <algorithm>
+
 #include "twrp-functions.hpp"
 #include "twcommon.h"
 #ifndef BUILD_TWRPTAR_MAIN
@@ -44,14 +46,12 @@
 #include "variables.h"
 #include "bootloader.h"
 #include "cutils/properties.h"
-#ifdef ANDROID_RB_POWEROFF
-	#include "cutils/android_reboot.h"
-#endif
+#include "cutils/android_reboot.h"
+#include <sys/reboot.h>
 #endif // ndef BUILD_TWRPTAR_MAIN
 #ifndef TW_EXCLUDE_ENCRYPTED_BACKUPS
 	#include "openaes/inc/oaes_lib.h"
 #endif
-#include "cutils/android_reboot.h"
 
 extern "C" {
 	#include "libcrecovery/common.h"
@@ -157,12 +157,12 @@ int TWFunc::Wait_For_Child(pid_t pid, int *status, string Child_Name) {
 
 	rc_pid = waitpid(pid, status, 0);
 	if (rc_pid > 0) {
-		if (WEXITSTATUS(*status) == 0)
-			LOGINFO("%s process ended with RC=%d\n", Child_Name.c_str(), WEXITSTATUS(*status)); // Success
-		else if (WIFSIGNALED(*status)) {
+		if (WIFSIGNALED(*status)) {
 			LOGINFO("%s process ended with signal: %d\n", Child_Name.c_str(), WTERMSIG(*status)); // Seg fault or some other non-graceful termination
 			return -1;
-		} else if (WEXITSTATUS(*status) != 0) {
+		} else if (WEXITSTATUS(*status) == 0) {
+			LOGINFO("%s process ended with RC=%d\n", Child_Name.c_str(), WEXITSTATUS(*status)); // Success
+		} else {
 			LOGINFO("%s process ended with ERROR=%d\n", Child_Name.c_str(), WEXITSTATUS(*status)); // Graceful exit, but there was an error
 			return -1;
 		}
@@ -551,48 +551,51 @@ int TWFunc::tw_reboot(RebootCommand command)
 {
 	// Always force a sync before we reboot
 	sync();
+	Update_Log_File();
 
 	switch (command) {
 		case rb_current:
 		case rb_system:
-			Update_Log_File();
 			Update_Intent_File("s");
 			sync();
 			check_and_run_script("/sbin/rebootsystem.sh", "reboot system");
+#ifdef ANDROID_RB_PROPERTY
+			return property_set(ANDROID_RB_PROPERTY, "reboot,");
+#elif defined(ANDROID_RB_RESTART)
+			return android_reboot(ANDROID_RB_RESTART, 0, 0);
+#else
 			return reboot(RB_AUTOBOOT);
+#endif
 		case rb_recovery:
 			check_and_run_script("/sbin/rebootrecovery.sh", "reboot recovery");
 #ifdef ANDROID_RB_PROPERTY
-			property_set(ANDROID_RB_PROPERTY, "reboot,recovery");
+			return property_set(ANDROID_RB_PROPERTY, "reboot,recovery");
 #else
 			return __reboot(LINUX_REBOOT_MAGIC1, LINUX_REBOOT_MAGIC2, LINUX_REBOOT_CMD_RESTART2, (void*) "recovery");
 #endif
-			sleep(5);
-			return 0;
 		case rb_bootloader:
 			check_and_run_script("/sbin/rebootbootloader.sh", "reboot bootloader");
 #ifdef ANDROID_RB_PROPERTY
-			property_set(ANDROID_RB_PROPERTY, "reboot,bootloader");
+			return property_set(ANDROID_RB_PROPERTY, "reboot,bootloader");
 #else
 			return __reboot(LINUX_REBOOT_MAGIC1, LINUX_REBOOT_MAGIC2, LINUX_REBOOT_CMD_RESTART2, (void*) "bootloader");
 #endif
-			sleep(5);
-			return 0;
 		case rb_poweroff:
 			check_and_run_script("/sbin/poweroff.sh", "power off");
-#ifdef ANDROID_RB_POWEROFF
-			android_reboot(ANDROID_RB_POWEROFF, 0, 0);
-#endif
+#ifdef ANDROID_RB_PROPERTY
+			return property_set(ANDROID_RB_PROPERTY, "shutdown,");
+#elif defined(ANDROID_RB_POWEROFF)
+			return android_reboot(ANDROID_RB_POWEROFF, 0, 0);
+#else
 			return reboot(RB_POWER_OFF);
+#endif
 		case rb_download:
 			check_and_run_script("/sbin/rebootdownload.sh", "reboot download");
 #ifdef ANDROID_RB_PROPERTY
-			property_set(ANDROID_RB_PROPERTY, "reboot,download");
+			return property_set(ANDROID_RB_PROPERTY, "reboot,download");
 #else
 			return __reboot(LINUX_REBOOT_MAGIC1, LINUX_REBOOT_MAGIC2, LINUX_REBOOT_CMD_RESTART2, (void*) "download");
 #endif
-			sleep(5);
-			return 0;
 		default:
 			return -1;
 	}
@@ -731,8 +734,12 @@ int TWFunc::read_file(string fn, uint64_t& results) {
 }
 
 int TWFunc::write_file(string fn, const string& line) {
+	return write_file(fn, line, "we");
+}
+
+int TWFunc::write_file(string fn, const string& line, const char *mode) {
 	FILE *file;
-	file = fopen(fn.c_str(), "w");
+	file = fopen(fn.c_str(), mode);
 	if (file != NULL) {
 		fwrite(line.c_str(), line.size(), 1, file);
 		fclose(file);
@@ -846,7 +853,7 @@ void TWFunc::Auto_Generate_Backup_Name() {
 		return;
 	}
 	string Backup_Name = Get_Current_Date();
-	Backup_Name += " " + propvalue;
+	Backup_Name += "_" + propvalue;
 	if (Backup_Name.size() > MAX_BACKUP_NAME_LEN)
 		Backup_Name.resize(MAX_BACKUP_NAME_LEN);
 	// Trailing spaces cause problems on some file systems, so remove them
@@ -856,6 +863,7 @@ void TWFunc::Auto_Generate_Backup_Name() {
 		Backup_Name.resize(Backup_Name.size() - 1);
 		space_check = Backup_Name.substr(Backup_Name.size() - 1, 1);
 	}
+	replace(Backup_Name.begin(), Backup_Name.end(), ' ', '_');
 	DataManager::SetValue(TW_BACKUP_NAME, Backup_Name);
 	if (PartitionManager.Check_Backup_Name(false) != 0) {
 		LOGINFO("Auto generated backup name '%s' contains invalid characters, using date instead.\n", Backup_Name.c_str());
@@ -1270,6 +1278,17 @@ void TWFunc::trim(std::string& str)
 	for(size_t i = str.size() - 1; i > start && isspace(str[i]); --i)
 		--len;
 	str = str.substr(start, len);
+}
+
+int64_t TWFunc::getFreeSpace(const std::string& path)
+{
+	struct statfs buf; /* allocate a buffer */
+	int rc;
+
+	if (statfs(path.c_str(), &buf) < 0)
+		return -1;
+
+	return int64_t(buf.f_bsize) * int64_t(buf.f_bavail);
 }
 
 #ifdef HAVE_SELINUX

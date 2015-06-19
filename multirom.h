@@ -82,6 +82,7 @@ enum
 #define MROM_SWAP_COPY_SECONDARY 1
 #define MROM_SWAP_COPY_INTERNAL  2
 #define MROM_SWAP_MOVE_INTERNAL  3
+#define MROM_SWAP_DUPLICATE      4
 
 #define MROM_AUTOBOOT_LAST       0x01
 #define MROM_AUTOBOOT_CHECK_KEYS 0x04
@@ -100,6 +101,8 @@ struct base_folder
 	int min_size;
 	int size;
 };
+
+class EdifyHacker;
 
 class MultiROM
 {
@@ -146,10 +149,12 @@ public:
 
 	static bool move(std::string from, std::string to);
 	static bool erase(std::string name);
+	static bool restorecon(std::string name);
 
 	static bool flashZip(std::string rom, std::string file);
 	static bool flashORSZip(std::string file, int *wipe_cache);
 	static bool injectBoot(std::string img_path, bool only_if_older = false);
+	static bool injectBootDeprecated(std::string img_path, bool only_if_older = false);
 	static bool extractBootForROM(std::string base);
 	static int copyBoot(std::string& orig, std::string rom);
 	static bool wipe(std::string name, std::string what);
@@ -180,6 +185,7 @@ public:
 	static bool copyInternal(const std::string& dest_name);
 	static bool wipeInternal();
 	static bool copySecondaryToInternal(const std::string& rom_name);
+	static bool duplicateSecondary(const std::string& src, const std::string& dst);
 
 	static std::string getRecoveryVersion();
 
@@ -187,10 +193,8 @@ private:
 	static void findPath();
 	static bool changeMounts(std::string base);
 	static void restoreMounts();
-	static bool prepareZIP(std::string& file, bool &has_block_update);
+	static bool prepareZIP(std::string& file, EdifyHacker *hacker, bool& restore_script);
 	static bool verifyZIP(const std::string& file, int &verify_status);
-	static bool skipLine(const char *line);
-	static void appendBraces(FILE *out, const char *line);
 	static std::string getNewRomName(std::string zip, std::string def);
 	static bool createDirs(std::string name, int type);
 	static bool compressRamdisk(const char *src, const char *dest, int cmpr);
